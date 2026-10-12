@@ -51,7 +51,7 @@ python -m haim_experiments.image_embeddings --cxr_metadata data/mimic-cxr-2.0.0-
 ## Experiments
 This details the HAIM-derived experiments regarding mortality and phenotype classification we included in our paper, along with the visualization of results.
 
-### Mortality
+### Mortality Experiment
 Training the different mortality models:
 ```
 python -m haim_experiments.train_mortality \
@@ -114,6 +114,24 @@ python -m haim_experiments.plot_results dumbbell \
     --output_path results/fig_shap_dumbbell_full.pdf \
     --top_n 10
 ```
-
+### Phenotype Experiment
+Training with and without image modality:
+```
+python -m haim_experiments.train_phenotyping \
+    --root_path data/root --binned_dir data/pheno_store --cxr_metadata data/mimic-cxr-2.0.0-metadata.csv \
+    --image_embeddings data/image_embeddings_full.csv --output_dir results/pheno_store_preferred \
+    --image_feature_set dense --fallback_mode clinical --variant_label cxr_dense --seeds "42,43,44,45,46"
+python -m haim_experiments.train_phenotyping \
+    --root_path data/root --binned_dir data/pheno_store --cxr_metadata data/mimic-cxr-2.0.0-metadata.csv \
+    --output_dir results/pheno_store_preferred_noimg  --fallback_mode clinical --variant_label no_cxr \
+    --no_image_features --seeds "42,43,44,45,46"
+```
+Visualizing differences in feature importance and results:
+```
+python -m haim_experiments.plot_results shap_vs_delta \
+    --results_dir_with results/pheno_store_preferred --variant_label_with cxr_dense \
+    --results_dir_without results/pheno_store_preferred_noimg --variant_label_without no_cxr \
+    --include_auprc --combine_metrics --output_path results/fig_shap_vs_delta_pheno.pdf
+```
 ## Thanks
 We wish to thank the contributors of the repository [MedFuse](https://github.com/nyuad-cai/MedFuse?tab=readme-ov-file), from which we adapted the mimic4process scripts, which are in turn based upon the repository [mimic3-benchmarks](https://github.com/YerevaNN/mimic3-benchmarks/), which we also wish to acknowledge. We also wish to tank the contributors of the repository [HAIM](https://github.com/lrsoenksen/HAIM), from which we derived our experiments.
