@@ -48,7 +48,72 @@ python resize_images.py
 python -m haim_experiments.image_embeddings --cxr_metadata data/mimic-cxr-2.0.0-metadata.csv --all_stays data/root/all_stays.csv --image_dir data/resized --output_csv data/image_embeddings_full.csv --weights densenet121-res224-chex --include_predictions
 
 ```
+## Experiments
+This details the HAIM-derived experiments regarding mortality and phenotype classification we included in our paper, along with the visualization of results.
 
+### Mortality
+Training the different mortality models:
+```
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_store --output_dir results/mortality_store_preferred_missing \
+    --fallback_mode clinical --variant_label store_preferred_miss --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_store --output_dir results/mortality_store_default_missing \
+    --fallback_mode train_mean --variant_label store_default_miss --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_store --output_dir results/mortality_store_preferred \
+     --fallback_mode clinical --variant_label store_preferred --no-include_measured_count --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_store --output_dir results/mortality_store_default \
+    --fallback_mode train_mean --variant_label store_default --no-include_measured_count --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_chart --output_dir results/mortality_chart_default \
+    --fallback_mode train_mean --variant_label chart_default --no-include_measured_count --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_chart --output_dir results/mortality_chart_preferred \
+    --fallback_mode clinical --variant_label chart_preferred --no-include_measured_count --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_chart --output_dir results/mortality_chart_preferred_missing \
+    --fallback_mode clinical --variant_label chart_preferred_miss --seeds "42,43,44,45,46"
+python -m haim_experiments.train_mortality \
+    --root_path data/root --binned_dir data/mort_chart --output_dir results/mortality_chart_default_missing \
+    --fallback_mode train_mean --variant_label chart_default_miss --seeds "42,43,44,45,46"
+```
+each experiments results can be analyzed by themselves with:
+```
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_store_preferred_missing --variant_label store_preferred_miss
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_chart_default_missing --variant_label chart_default_miss
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_store_default --variant_label store_default
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_store_preferred --variant_label store_preferred
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_chart_preferred_missing --variant_label chart_preferred_miss
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_chart_default_missing --variant_label chart_default_miss
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_chart_default --variant_label chart_default
+python -m haim_experiments.plot_results single \
+  --results_dir results/mortality_chart_preferred --variant_label chart_preferred
+```
+the visualization from our paper can be created with:
+```
+python -m haim_experiments.plot_results dumbbell \
+    --results_dir_a1 results/mortality_chart_default --variant_label_a1 chart_default \
+    --results_dir_a2 results/mortality_store_default --variant_label_a2 store_default \
+    --results_dir_b1 results/mortality_chart_preferred --variant_label_b1 chart_preferred \
+    --results_dir_b2 results/mortality_store_preferred --variant_label_b2 store_preferred \
+    --results_dir_c1 results/mortality_chart_default_missing --variant_label_c1 chart_default_miss \
+    --results_dir_c2 results/mortality_store_default_missing --variant_label_c2 store_default_miss \
+    --results_dir_d1 results/mortality_chart_preferred_missing --variant_label_d1 chart_preferred_miss \
+    --results_dir_d2 results/mortality_store_preferred_missing --variant_label_d2 store_preferred_miss \
+    --legend_name_1 charttime --legend_name_2 storetime \
+    --panel_a_caption a --panel_b_caption b --panel_c_caption c --panel_d_caption d \
+    --output_path results/fig_shap_dumbbell_full.pdf \
+    --top_n 10
+```
 
 ## Thanks
 We wish to thank the contributors of the repository [MedFuse](https://github.com/nyuad-cai/MedFuse?tab=readme-ov-file), from which we adapted the mimic4process scripts, which are in turn based upon the repository [mimic3-benchmarks](https://github.com/YerevaNN/mimic3-benchmarks/), which we also wish to acknowledge. We also wish to tank the contributors of the repository [HAIM](https://github.com/lrsoenksen/HAIM), from which we derived our experiments.
