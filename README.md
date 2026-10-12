@@ -37,9 +37,9 @@ The next step creates task-specific episodes. Data is also binned into 1-hour bi
 python -m mimic3benchmark.scripts.create_in_hospital_mortality data/root data/mort_store --variant storetime --mortality_column Mortality --no-include_mask 
 python -m mimic3benchmark.scripts.create_in_hospital_mortality data/root data/mort_chart --variant charttime --mortality_column Mortality --no-include_mask 
 python -m mimic3benchmark.scripts.create_phenotyping data/root data/pheno_store --variant storetime --no-include_mask
-python -m mimic3models.split_train_val data/mort_store
-python -m mimic3models.split_train_val data/mort_chart
-python -m mimic3models.split_train_val data/pheno_store
+python -m mimic3benchmark.split_train_val data/mort_store
+python -m mimic3benchmark.split_train_val data/mort_chart
+python -m mimic3benchmark.split_train_val data/pheno_store
 ```
 
 For the phenotype experiment, we also preprocess the CXR images:
