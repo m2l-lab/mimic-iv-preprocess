@@ -12,6 +12,9 @@ def move_to_partition(args, patients, partition):
     for patient in patients:
         src = os.path.join(args.subjects_root_path, patient)
         dest = os.path.join(args.subjects_root_path, partition, patient)
+        # On rerun patient folder may already exist so replace
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
         shutil.move(src, dest)
 
 

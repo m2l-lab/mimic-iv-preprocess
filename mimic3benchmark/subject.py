@@ -113,7 +113,9 @@ def convert_events_to_timeseries_s(events, variable_column='variable', variables
     return timeseries
 
 
-def get_first_valid_from_timeseries(timeseries, variable):
+def get_first_valid_from_timeseries(timeseries, variable, max_hours=None, eps=1e-6):
+    if max_hours is not None:
+        timeseries = timeseries[timeseries.index < max_hours + eps]
     if variable in timeseries:
         idx = timeseries[variable].notnull()
         if idx.any():

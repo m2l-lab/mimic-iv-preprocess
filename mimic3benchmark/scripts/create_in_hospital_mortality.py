@@ -3,6 +3,7 @@ from __future__ import print_function
  
 import os
 import argparse
+import re
 import pandas as pd
 import random
 random.seed(49297)
@@ -11,14 +12,16 @@ from tqdm import tqdm
 from mimic3benchmark.scripts.binning_imputation import parse_timeseries, bin_timeseries, print_unparsable_summary
  
  
+VARIANT_SUFFIX = {'charttime': '', 'storetime': '_s', 'hybrid': '_h'}
+
+
 def is_target_ts_file(filename, suffix):
-    if suffix == '_s':
-        return "timeseries_s" in filename
-    return "timeseries" in filename and "timeseries_s" not in filename
+    # exact match, so e.g. the charttime variant does not pick up _s or _h files
+    return re.match(r'^episode\d+_timeseries{}\.csv$'.format(re.escape(suffix)), filename) is not None
  
  
 def process_partition(args, partition, unparsable_stats, eps=1e-6, n_hours=48):
-    suffix = '_s' if args.variant == 'storetime' else ''
+    suffix = VARIANT_SUFFIX[args.variant]
  
     output_dir = os.path.join(args.output_path, partition)
     if not os.path.exists(output_dir):
@@ -88,8 +91,10 @@ def main():
     parser = argparse.ArgumentParser(description="in-hospital mortality prediction task.")
     parser.add_argument('root_path', type=str, help="path to root folder.")
     parser.add_argument('output_path', type=str, help="directory where data should be stored.")
-    parser.add_argument('--variant', type=str, default='storetime', choices=['charttime', 'storetime'],
-                        help="Which timestamp variant to process: 'charttime' or 'storetime' (default).")
+    parser.add_argument('--variant', type=str, default='storetime', choices=['charttime', 'storetime', 'hybrid'],
+                        help="Which timestamp variant to process: 'charttime', 'storetime' (default) "
+                             "or 'hybrid' (timestamp per feature family, see "
+                             "mimic3benchmark/timestamp_families.py).")
     parser.add_argument('--mortality_column', type=str, default='Mortality',
                         choices=['Mortality', 'Mortality_1yr'],
                         help="Which label to use as target: 'Mortality' (default, "
