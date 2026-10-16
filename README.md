@@ -42,7 +42,7 @@ python -m mimic3benchmark.split_train_val data/mort_chart
 python -m mimic3benchmark.split_train_val data/pheno_store
 ```
 
-For the phenotype experiment, we also preprocess the CXR images:
+For the phenotype experiment, we also preprocess the CXR images (adjust the path in resize_images accordingly):
 ```
 python resize_images.py
 python -m haim_experiments.image_embeddings --cxr_metadata data/mimic-cxr-2.0.0-metadata.csv --all_stays data/root/all_stays.csv --image_dir data/resized --output_csv data/image_embeddings_full.csv --weights densenet121-res224-chex --include_predictions
