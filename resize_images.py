@@ -1,6 +1,5 @@
 #!/usr/bin/python
 
-import thread
 import time
 from PIL import Image
 import glob
