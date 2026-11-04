@@ -51,6 +51,12 @@ python -m haim_experiments.image_embeddings --cxr_metadata data/mimic-cxr-2.0.0-
 ## Experiments
 This details the HAIM-derived experiments regarding mortality and phenotype classification we included in our paper, along with the visualization of results.
 
+The [text-section leakage experiment](experiments/text_section_leakage/README.md)
+studies retrospective information in admission sections reconstructed from
+MIMIC-IV discharge summaries. It has its own hospital-admission cohort,
+patient-level splits, configuration, and Python environment, separate from the
+ICU preprocessing below.
+
 ### Mortality Experiment
 Training the different mortality models:
 ```

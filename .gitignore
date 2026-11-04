@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+
+# Restricted notes, identifiers, and row-level predictions.
+/artifacts_private/
+
+# Generated text-experiment outputs.
+/reports/text_section_leakage/results/
+/reports/text_section_leakage/figures/
+/reports/text_section_leakage/TABLES.md

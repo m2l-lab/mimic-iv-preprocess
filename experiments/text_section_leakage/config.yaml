@@ -1,0 +1,55 @@
+# Text-section leakage experiment — configuration.
+# Relative paths are resolved against this file's directory.
+
+data:
+  mimic_root: /path/to/mimic-iv-2.2
+  mimic_hosp_version: "MIMIC-IV 2.2 (hosp)"
+  mimic_note_version: "MIMIC-IV-Note 2.2 (discharge)"
+  discharge_csv: note/discharge.csv
+  admissions_csv: hosp/admissions.csv
+  patients_csv: hosp/patients.csv
+
+paths:
+  private_dir: ../../artifacts_private/text_section_leakage   # restricted, never commit
+  report_dir: ../../reports/text_section_leakage              # aggregate only
+
+seed: 42
+split:            # patient-disjoint (subject_id)
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# T3 / T4 injection: later sections from the original discharge summary,
+# appended in this fixed order (prespecified, outcome-blind).
+injection_sections: [discharge_condition, discharge_diagnosis, brief_hospital_course]
+
+core:
+  model_id: DATEXIS/CORe-clinical-mortality-prediction
+  revision: 1af1c4eb615bb3628b936e62decb4519b5775ae2
+  weights_sha256: 8c27a013cf59db9d3050045fa30dea030240670a1ce2479530ffd6d90cbb0515
+  mortality_index: 1          # softmax index of the mortality class (model card)
+  max_length: 512             # incl. [CLS] and [SEP]
+  base_budget: 382            # admission-text tokens shared by all paired conditions
+  injection_budget: 128       # reserved for T3/T4 injected tokens (382 + 128 + 2 = 512)
+  full_budget: 510            # sensitivity analysis: admission text only, no reservation
+  batch_size: 32
+  device: mps
+  eval_split: test
+
+tfidf:
+  # HashingVectorizer keeps memory bounded on 232k training notes; the document-
+  # frequency filter below is fitted on the training split only.
+  n_features: 1048576         # 2**20 hashed uni+bigram features
+  ngram_range: [1, 2]
+  min_df: 5
+  max_df: 0.9
+  sublinear_tf: true
+  conditions: [T0_COPIV, T1_ROBUST, T2_SCREENED, T3_RETROSPECTIVE, T4_OTHERPATIENT]
+  C_grid: [0.01, 0.1, 1.0, 10.0]
+  class_weight: null          # keep probabilities calibrated for the Brier score
+  selection_metric: auroc     # chosen on the validation split
+  max_iter: 2000
+
+bootstrap:
+  n_replicates: 2000
+  seed: 20261022
