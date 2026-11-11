@@ -16,7 +16,6 @@ VARIANT_SUFFIX = {'charttime': '', 'storetime': '_s', 'hybrid': '_h'}
 
 
 def is_target_ts_file(filename, suffix):
-    # exact match, so e.g. the charttime variant does not pick up _s or _h files
     return re.match(r'^episode\d+_timeseries{}\.csv$'.format(re.escape(suffix)), filename) is not None
  
  

@@ -24,17 +24,15 @@ parser.add_argument('--variable_map_file', type=str,
 parser.add_argument('--reference_range_file', type=str,
                     default=os.path.join(os.path.dirname(__file__), '../resources/variable_ranges.csv'),
                     help='CSV containing reference ranges for variables.')
-parser.add_argument('--variants', type=str, nargs='+', default=['charttime', 'storetime'],
+parser.add_argument('--variants', type=str, nargs='+', default=['charttime', 'storetime', 'hybrid'],
                     choices=['charttime', 'storetime', 'hybrid'],
                     help="Which episode files to write: 'charttime' (episode{i}_timeseries.csv), "
                          "'storetime' (..._s.csv) and/or 'hybrid' (..._h.csv: timestamp chosen per "
                          "feature family, see mimic3benchmark/timestamp_families.py). "
-                         "Default: charttime storetime.")
+                         "Default: all three.")
 args, _ = parser.parse_known_args()
 
-# Height/Weight (tabular features) may only come from the prediction window
-# of the tasks (first 48 h of the ICU stay, as in create_in_hospital_mortality /
-# create_phenotyping); later values would be look-ahead leakage.
+# Height/Weight only from the prediction window
 PREDICTION_WINDOW_HOURS = 48
 
 var_map = read_itemid_to_variable_map(args.variable_map_file)
@@ -47,12 +45,8 @@ if 'hybrid' in args.variants:
 
 
 def build_hybrid_events(events, events_s, storetime_itemids):
-    """Combine charttime and storetime events per itemid: itemids of a
-    storetime family come from events_s (storetime renamed to charttime so
-    the charttime helpers can be reused), all others from events."""
     from_chart = events[~events.itemid.isin(storetime_itemids)]
     from_store = events_s[events_s.itemid.isin(storetime_itemids)].rename(columns={'storetime': 'charttime'})
-    # rows without a storetime cannot be placed on the time axis
     from_store = from_store[from_store.charttime.notnull()]
     return pd.concat([from_chart, from_store], ignore_index=True, sort=False)
 
@@ -71,7 +65,6 @@ def write_hybrid_episodes(events_h, stays, episodic_data, subject_path):
         episode_h = add_hours_elpased_to_events(episode_h, intime).set_index('HOURS').sort_index(axis=0)
         episode_data = episodic_data.loc[episodic_data.index == stay_id].copy()
         if stay_id in episode_data.index:
-            # Height/Weight are bedside items, so they are charttime-anchored here
             episode_data.loc[stay_id, 'Weight'] = get_first_valid_from_timeseries(episode_h, 'Weight', max_hours=PREDICTION_WINDOW_HOURS)
             episode_data.loc[stay_id, 'Height'] = get_first_valid_from_timeseries(episode_h, 'Height', max_hours=PREDICTION_WINDOW_HOURS)
         episode_data.to_csv(os.path.join(subject_path, 'episode{}_h.csv'.format(i+1)), index_label='Icustay')
@@ -90,7 +83,6 @@ for subject_dir in tqdm(os.listdir(args.subjects_root_path), desc='Iterating ove
         continue
 
     try:
-        # reading tables of this subject
         stays = read_stays(os.path.join(args.subjects_root_path, subject_dir))
         
         diagnoses = read_diagnoses(os.path.join(args.subjects_root_path, subject_dir))
@@ -134,8 +126,7 @@ for subject_dir in tqdm(os.listdir(args.subjects_root_path), desc='Iterating ove
     if 'charttime' in args.variants:
         timeseries = convert_events_to_timeseries(events, variables=variables)
 
-        # extracting separate episodes
-        # import pdb; pdb.set_trace()      
+    
 
         for i in range(stays.shape[0]):
             stay_id = stays.stay_id.iloc[i]
@@ -184,15 +175,11 @@ for subject_dir in tqdm(os.listdir(args.subjects_root_path), desc='Iterating ove
 
         episode_s = add_hours_elpased_to_events_s(episode_s, intime).set_index('HOURS').sort_index(axis=0)
         if stay_id in episodic_data.index:
-            # taken from the storetime episode of THIS stay (previously read from
-            # `episode`, the last charttime episode with Height/Weight already
-            # dropped, so these were always NaN)
             episodic_data.loc[stay_id, 'Weight'] = get_first_valid_from_timeseries(episode_s, 'Weight', max_hours=PREDICTION_WINDOW_HOURS)
             episodic_data.loc[stay_id, 'Height'] = get_first_valid_from_timeseries(episode_s, 'Height', max_hours=PREDICTION_WINDOW_HOURS)
         episodic_data.loc[episodic_data.index == stay_id].to_csv(os.path.join(args.subjects_root_path, subject_dir,
                                                                               'episode{}_s.csv'.format(i+1)),
                                                                  index_label='Icustay')
-        # Height/Weight are tabular features only, not timeseries
         episode_s = episode_s.drop(columns=['Weight', 'Height'], errors='ignore')
         columns = list(episode_s.columns)
         columns_sorted = sorted(columns, key=(lambda x: "" if x == "Hours" else x))
