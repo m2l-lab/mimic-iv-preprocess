@@ -18,6 +18,8 @@ from haim_experiments.build_dataset import (build_feature_matrix, align_columns,
 from haim_experiments.haim_features import compute_train_variable_stats, compute_train_tabular_stats
 from haim_experiments.cohort_stats import compute_cohort_stats, print_cohort_stats_summary
 from haim_experiments.seed_aggregation import mean_std_ci, aggregate_feature_importance, aggregate_modality_importance
+from haim_experiments.bootstrap_compare import test_predictions_long
+from haim_experiments.phenotype_features import add_phenotype_features
 
 
 def main():
@@ -42,12 +44,16 @@ def main():
                          help="Enable early stopping on the validation set (default: OFF, for comparability.")
     parser.add_argument('--no-early_stopping', dest='early_stopping', action='store_false')
     parser.add_argument('--n_jobs', type=int, default=1,
-                         help="XGBoost thread count (default: 1). Matters for bit-exact reproducibility")
+                         help="XGBoost thread count (default: 1 for bit-exact reproducibility)")
     parser.add_argument('--seeds', type=str, default='42',
                          help="Comma-separated list of XGBoost random_state values to train with")
+    parser.add_argument('--include_icd_phenotypes', action='store_true', default=False,
+                         help="Ablation: ICD codes as input features (leakage).")
+    parser.add_argument('--inject_imputation_leak', action='store_true', default=False,
+                         help="Ablation: imputation statistics from train + val + test instead of train only.")
     parser.add_argument('--one_stay_per_patient', action='store_true', default=False,
                          help="Restrict each of train/val/test to each patient's chronologically first "
-                              "ICU episode only (default: off, keeps all stays)")
+                              "ICU episode only (default: off)")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -71,13 +77,21 @@ def main():
     root_test_phys = os.path.join(args.root_path, 'test')
 
     print("Computing train-set variable means (train_listfile stays only, no val leakage)...")
-    train_stats = compute_train_variable_stats(
-        binned_train_phys, stay_filenames=train_listfile['stay'].tolist())
+    stats_stays = train_listfile['stay'].tolist()
+    if args.inject_imputation_leak:
+        stats_stays = ([os.path.abspath(os.path.join(binned_train_phys, s))
+                        for s in pd.concat([train_listfile, val_listfile]).stay]
+                       + [os.path.abspath(os.path.join(binned_test_phys, s)) for s in test_listfile.stay])
+    train_stats = compute_train_variable_stats(binned_train_phys, stay_filenames=stats_stays)
 
     print("Computing train-set tabular stats (train_listfile stays only, no val leakage)...")
     train_episode_paths = episode_paths_from_listfile(train_listfile, root_train_phys)
+    stats_episode_paths = train_episode_paths
+    if args.inject_imputation_leak:
+        stats_episode_paths = (episode_paths_from_listfile(pd.concat([train_listfile, val_listfile]), root_train_phys)
+                               + episode_paths_from_listfile(test_listfile, root_test_phys))
     tabular_train_stats = compute_train_tabular_stats(
-        root_train_phys, train_episode_paths,
+        root_train_phys, stats_episode_paths,
         numeric_agg='mean' if args.fallback_mode == 'train_mean' else 'median')
 
     print("Building feature matrices...")
@@ -93,6 +107,11 @@ def main():
         test_listfile, binned_test_phys, root_test_phys, train_stats, args.fallback_mode,
         include_measured_count=args.include_measured_count, tabular_train_stats=tabular_train_stats,
         include_tabular_missing_indicator=args.include_measured_count)
+
+    if args.include_icd_phenotypes:
+        X_train = add_phenotype_features(X_train, meta_train, root_train_phys)
+        X_val = add_phenotype_features(X_val, meta_val, root_train_phys)
+        X_test = add_phenotype_features(X_test, meta_test, root_test_phys)
 
     X_val = align_columns(X_train, X_val)
     X_test = align_columns(X_train, X_test)
@@ -154,6 +173,8 @@ def main():
         def _modality(col):
             if col.startswith('ts_'):
                 return 'timeseries'
+            if col.startswith('icd_'):
+                return 'icd'
             if col.startswith('tab_'):
                 return 'tabular'
             return 'other'
@@ -165,7 +186,7 @@ def main():
         per_seed_results.append({
             'seed': seed, 'model': model, 'auroc': auroc, 'auprc': auprc, 'trees_used': trees_used,
             'shap_values': shap_values, 'importance_df': importance_df,
-            'modality_importance_pct': modality_importance_pct,
+            'modality_importance_pct': modality_importance_pct, 'test_pred': test_pred,
         })
 
     prefix = args.variant_label
@@ -197,6 +218,8 @@ def main():
     shap_values_avg = np.mean([r['shap_values'] for r in per_seed_results], axis=0)
     np.save(os.path.join(args.output_dir, '{}_shap_values.npy'.format(prefix)), shap_values_avg)
     meta_test.to_csv(os.path.join(args.output_dir, '{}_test_meta.csv'.format(prefix)), index=False)
+    test_predictions_long(meta_test, 'mortality', y_test, per_seed_results).to_csv(
+        os.path.join(args.output_dir, '{}_test_predictions.csv'.format(prefix)), index=False)
     X_test.to_csv(os.path.join(args.output_dir, '{}_test_features.csv'.format(prefix)), index=False)
 
     for r in per_seed_results:

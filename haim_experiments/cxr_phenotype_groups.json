@@ -1,0 +1,14 @@
+{
+  "_comment": "Fix the groups before looking at the results.",
+  "cxr_visible": [
+    "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)",
+    "Pleurisy; pneumothorax; pulmonary collapse",
+    "Chronic obstructive pulmonary disease and bronchiectasis"
+  ],
+  "not_cxr_visible": [
+    "Diabetes mellitus with complications",
+    "Diabetes mellitus without complication",
+    "Disorders of lipid metabolism",
+    "Other liver diseases"
+  ]
+}

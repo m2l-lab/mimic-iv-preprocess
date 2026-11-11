@@ -1,6 +1,5 @@
 """Extract fixed-size CXR image embeddings using torchxrayvision's
 DenseNet121 (CheXpert-pretrained weights), for the matched-subset stays
-produced by cxr_matching.py.
 """
 
 import os

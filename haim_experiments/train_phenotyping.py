@@ -16,6 +16,9 @@ from haim_experiments.cxr_matching import match_images_to_stays, assign_matched_
 from haim_experiments.haim_features import compute_train_variable_stats, compute_train_tabular_stats
 from haim_experiments.cohort_stats import compute_cohort_stats, print_cohort_stats_summary
 from haim_experiments.seed_aggregation import mean_std_ci, aggregate_feature_importance, aggregate_modality_importance
+from haim_experiments.bootstrap_compare import test_predictions_long
+from haim_experiments.micro_features import MICRO_ANCHORS, add_micro_features
+from haim_experiments.image_controls import IMAGE_TRANSFORMS, transform_image_block
 
 
 
@@ -26,6 +29,8 @@ def _safe_name(phenotype):
 def _modality(col):
     if col.startswith('ts_'):
         return 'timeseries'
+    if col.startswith('micro_'):
+        return 'microbiology'
     if col.startswith('tab_'):
         return 'tabular'
     if col.startswith('img_'):
@@ -70,6 +75,24 @@ def main():
                          help="Ablation: keep the same matched-subset cohort but DO NOT attach any image features")
     parser.add_argument('--image_feature_set', choices=['dense', 'predictions', 'both'], default='dense',
                          help="Which columns of image_embeddings to actually use (default: 'dense')")
+    parser.add_argument('--image_transform', choices=list(IMAGE_TRANSFORMS), default='none',
+                         help="Dimensionality control for the image block (see image_controls.py): "
+                              "'pca' (fit on train only), 'gaussian_noise' (iid N(0,1) block of the same "
+                              "size), 'permuted' (real rows shuffled across stays within each split). "
+                              "Default 'none'.")
+    parser.add_argument('--image_pca_dim', type=int, default=20,
+                         help="Number of PCA components for --image_transform pca (default 20).")
+    parser.add_argument('--image_noise_dim', type=int, default=None,
+                         help="Number of noise columns for --image_transform gaussian_noise "
+                              "(default: size of the selected image block).")
+    parser.add_argument('--image_control_seed', type=int, default=0,
+                         help="RNG seed of the image control, fixed across training seeds (default 0).")
+    parser.add_argument('--micro_features', type=str, default=None,
+                         help="CSV from extract_microbiology_features.py; adds micro_* features.")
+    parser.add_argument('--micro_anchor', choices=list(MICRO_ANCHORS), default='storetime',
+                         help="Timestamp the microbiology results are filtered by (charttime = ablation).")
+    parser.add_argument('--inject_imputation_leak', action='store_true', default=False,
+                         help="Ablation: imputation statistics from train + val + test instead of train only.")
     parser.add_argument('--one_stay_per_patient', action='store_true', default=False,
                          help="Restrict each of train/val/test to each patient's chronologically first "
                               "ICU episode only (default: off, keeps all stays).")
@@ -108,6 +131,7 @@ def main():
         print("--no_image_features set: keeping the matched-image-subset cohort, but NOT attaching "
               "any image features to X (ablation).")
         image_embeddings_df = None
+        image_control_info = {'image_transform': None}
     else:
         image_embeddings_df = pd.read_csv(args.image_embeddings)
         emb_cols = [c for c in image_embeddings_df.columns if c.startswith('img_emb_')]
@@ -134,6 +158,11 @@ def main():
             "dense only" if args.image_feature_set == 'dense' else
             "predictions only" if args.image_feature_set == 'predictions' else "dense + predictions"))
         image_embeddings_df = image_embeddings_df[['stay_id'] + keep_cols]
+        image_embeddings_df, image_control_info = transform_image_block(
+            image_embeddings_df,
+            {part: split_dict[part]['stay_id'].tolist() for part in ('train', 'val', 'test')},
+            transform=args.image_transform, pca_dim=args.image_pca_dim,
+            noise_dim=args.image_noise_dim, seed=args.image_control_seed)
 
     binned_train_phys = os.path.join(args.binned_dir, 'train')  # train AND val stays physically live here
     binned_test_phys = os.path.join(args.binned_dir, 'test')
@@ -141,11 +170,18 @@ def main():
     root_test_phys = os.path.join(args.root_path, 'test')
 
     print("Computing train-set stats (matched train stays only, no val/test leakage)...")
-    train_stats = compute_train_variable_stats(
-        binned_train_phys, stay_filenames=split_dict['train']['stay'].tolist())
+    stats_stays = split_dict['train']['stay'].tolist()
     train_episode_paths = episode_paths_from_listfile(split_dict['train'], root_train_phys)
+    stats_episode_paths = train_episode_paths
+    if args.inject_imputation_leak:
+        train_val = pd.concat([split_dict['train'], split_dict['val']])
+        stats_stays = ([os.path.abspath(os.path.join(binned_train_phys, s)) for s in train_val.stay]
+                       + [os.path.abspath(os.path.join(binned_test_phys, s)) for s in split_dict['test'].stay])
+        stats_episode_paths = (episode_paths_from_listfile(train_val, root_train_phys)
+                               + episode_paths_from_listfile(split_dict['test'], root_test_phys))
+    train_stats = compute_train_variable_stats(binned_train_phys, stay_filenames=stats_stays)
     tabular_train_stats = compute_train_tabular_stats(
-        root_train_phys, train_episode_paths,
+        root_train_phys, stats_episode_paths,
         # Tied to --fallback_mode, same "naive vs. careful" axis as the
         # timeseries fallback, rather than a separate flag: 'train_mean'
         # (default/naive) -> mean; 'clinical' (preferred/careful) -> median.
@@ -164,6 +200,11 @@ def main():
         split_dict['test'], binned_test_phys, root_test_phys, image_embeddings_df,
         train_stats, tabular_train_stats, args.fallback_mode,
         args.include_measured_count, args.include_measured_count, label_columns=label_columns)
+
+    if args.micro_features:
+        X_train = add_micro_features(X_train, meta_train, args.micro_features, args.micro_anchor)
+        X_val = add_micro_features(X_val, meta_val, args.micro_features, args.micro_anchor)
+        X_test = add_micro_features(X_test, meta_test, args.micro_features, args.micro_anchor)
 
     X_val = align_columns(X_train, X_val)
     X_test = align_columns(X_train, X_test)
@@ -189,6 +230,7 @@ def main():
     print("\nTraining with {} seed(s) per phenotype: {}".format(len(seeds), seeds))
 
     all_metrics = []
+    prediction_frames = []
     for phenotype in label_columns:
         y_train = Y_train[phenotype].values
         y_val = Y_val[phenotype].values
@@ -235,8 +277,9 @@ def main():
             per_seed_results.append({
                 'seed': seed, 'model': model, 'auroc': auroc, 'auprc': auprc, 'trees_used': trees_used,
                 'shap_values': shap_values, 'importance_df': importance_df,
-                'modality_importance_pct': modality_importance_pct,
+                'modality_importance_pct': modality_importance_pct, 'test_pred': test_pred,
             })
+        prediction_frames.append(test_predictions_long(meta_test, phenotype, y_test, per_seed_results))
 
         prefix = "{}_{}".format(args.variant_label, _safe_name(phenotype))
 
@@ -278,6 +321,7 @@ def main():
             'fallback_mode': args.fallback_mode,
             'image_features_included': not args.no_image_features,
             'image_feature_set': (None if args.no_image_features else args.image_feature_set),
+            'image_control': image_control_info,
             'n_train': int(X_train.shape[0]),
             'n_val': int(X_val.shape[0]),
             'n_test': int(X_test.shape[0]),
@@ -314,11 +358,16 @@ def main():
             phenotype, auroc_stats['mean'], auroc_stats['std'], auprc_stats['mean'], auprc_stats['std'],
             trees_used, len(seeds)))
 
+    if prediction_frames:
+        pd.concat(prediction_frames, ignore_index=True).to_csv(
+            os.path.join(args.output_dir, '{}_test_predictions.csv'.format(args.variant_label)), index=False)
+
     metrics_summary = {
         'variant_label': args.variant_label,
         'fallback_mode': args.fallback_mode,
         'image_features_included': not args.no_image_features,
         'image_feature_set': (None if args.no_image_features else args.image_feature_set),
+        'image_control': image_control_info,
         'n_estimators_requested': args.n_estimators,
         'early_stopping': args.early_stopping,
         'n_train': int(X_train.shape[0]),

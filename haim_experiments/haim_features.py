@@ -17,7 +17,7 @@ CATEGORICAL_VARIABLES = [
 
 
 _GCS_EYE_MAP = {
-    "0 none": 0, "none": 0,
+    "0 none": 1, "none": 1,
     "1 no response": 1, "no response": 1,
     "2 to pain": 2, "to pain": 2,
     "3 to speech": 3, "to speech": 3,
@@ -33,18 +33,27 @@ _GCS_MOTOR_MAP = {
 }
 _GCS_VERBAL_MAP = {
     "1 no response": 1, "no response": 1,
-    "no response-ett": 1, "1.0 et/trach": 1,  
     "2 incomp sounds": 2, "incomprehensible sounds": 2,
     "3 inapprop words": 3, "inappropriate words": 3,
     "4 confused": 4, "confused": 4,
     "5 oriented": 5, "oriented": 5,
 }
 
+GCS_VERBAL = "Glascow coma scale verbal response"
+# intubated: verbal not assessable; ETT hours = 1 under 'clinical' (GCS "1T" convention),
+# missing under 'train_mean'; recorded by ETT features in both
+GCS_VERBAL_NOT_ASSESSABLE = {"no response-ett", "1.0 et/trach"}
+GCS_VERBAL_ETT_CLINICAL_VALUE = 1
+
 CATEGORICAL_STRING_MAPS = {
     "Glascow coma scale eye opening": _GCS_EYE_MAP,
     "Glascow coma scale motor response": _GCS_MOTOR_MAP,
     "Glascow coma scale verbal response": _GCS_VERBAL_MAP,
 }
+
+
+def _verbal_not_assessable(raw_series):
+    return raw_series.astype(str).str.strip().str.lower().isin(GCS_VERBAL_NOT_ASSESSABLE)
 
 
 def _coerce_variable_to_numeric(raw_series, var_name):
@@ -195,7 +204,16 @@ def extract_ts_features(binned_csv_path, train_stats, variables=None,
 
         measured_count = int(raw.notnull().sum())
 
-        if measured_count > 0:
+        if var == GCS_VERBAL:
+            not_assessable = (_verbal_not_assessable(df[var]) if var in df.columns
+                              else pd.Series([False] * n_bins))
+            features["{}_ett_count".format(var)] = float(not_assessable.sum())
+            features["{}_ett_flag".format(var)] = float(not_assessable.any())
+            if fallback_mode == "clinical" and not_assessable.any():
+                raw = raw.copy()
+                raw.loc[not_assessable.values] = GCS_VERBAL_ETT_CLINICAL_VALUE
+
+        if raw.notnull().any():
             dense = raw.ffill().bfill()
         else:
             var_stats = train_stats.get(var, {})
