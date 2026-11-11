@@ -10,7 +10,7 @@ Noteworthy changes are:
 - the option to encode missingness of hourly measurements as binary variables
 - addition of more laboratory values 
 - restricting laboratory measurements to only those matching in unit and specimen fluid. However, it is possible that there are lab_ids currently not being considered. 
--stricter checking of in-house mortality.
+- stricter checking of in-house mortality.
 - removed the Glasgow overall score and capillary refill rate as the IDs used in the script could not find any valid measurements in MIMIC-IV 3.1 and they were empty variables.
 
 Note: the code we adapted contained a spelling error, turning "Glasgow" into "Glascow", which so far remains unfixed 
