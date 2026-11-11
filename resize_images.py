@@ -1,6 +1,4 @@
-#!/usr/bin/python
 
-import time
 from PIL import Image
 import glob
 from tqdm import tqdm
