@@ -194,23 +194,8 @@ def clean_dbp(df):
 def clean_fio2(df):
     v = df.value.astype(float).copy()
 
-    ''' The line below is the correct way of doing the cleaning, since we will not compare 'str' to 'float'.
-    If we use that line it will create mismatches from the data of the paper in ~50 ICU stays.
-    The next releases of the benchmark should use this line.
-    '''
-    # idx = df.valuenum.fillna('').apply(lambda s: 'torr' not in s.lower()) & (v>1.0)
-
-    ''' The line below was used to create the benchmark dataset that the paper used. Note this line will not work
-    in python 3, since it may try to compare 'str' to 'float'.
-    '''
-    # idx = df.valuenum.fillna('').apply(lambda s: 'torr' not in s.lower()) & (df.value > 1.0)
-
-    ''' The two following lines implement the code that was used to create the benchmark dataset that the paper used.
-    This works with both python 2 and python 3.
-    '''
-    is_str = np.array(map(lambda x: type(x) == str, list(df.value)), dtype=bool)
-    idx = df.valuenum.fillna('').apply(lambda s: 'torr' not in s.lower()) & (is_str | (~is_str & (v > 1.0)))
-
+    # percentages -> fractions; values already given as fractions (<= 1) stay unchanged
+    idx = v > 1.0
     v.loc[idx] = v[idx] / 100.
     return v
 
@@ -239,7 +224,8 @@ def clean_o2sat(df):
 # Temperature: map Farenheit to Celsius, some ambiguous 50<x<80
 def clean_temperature(df):
     v = df.value.astype(float).copy()
-    idx = df.valuenum.fillna('').apply(lambda s: 'F' in s.lower()) | df.mimic_label.apply(lambda s: 'F' in s.lower()) | (v >= 79)
+    # Fahrenheit detected by value only: a label check would also convert Celsius values charted in an F item
+    idx = v >= 79
     v.loc[idx] = (v[idx] - 32) * 5. / 9
     return v
 
@@ -249,16 +235,12 @@ def clean_temperature(df):
 #CC: considering unitname now too
 def clean_weight(df):
     v = df.value.astype(float).copy()
-    # ounces
-    idx = df.unitname.fillna('').apply(lambda s: 'oz' in s.lower()) \
-        | df.valuenum.fillna('').apply(lambda s: 'oz' in s.lower()) \
-        | df.mimic_label.apply(lambda s: 'oz' in s.lower())
-    v.loc[idx] = v[idx] / 16.
-    # pounds
-    idx = idx | df.unitname.fillna('').apply(lambda s: 'lb' in s.lower()) \
-        | df.valuenum.fillna('').apply(lambda s: 'lb' in s.lower()) \
-        | df.mimic_label.apply(lambda s: 'lb' in s.lower())
-    v.loc[idx] = v[idx] * 0.453592
+    unit = df.unitname.fillna('').str.lower()
+    label = df.mimic_label.str.lower()
+    oz = unit.str.contains('oz', regex=False) | label.str.contains('oz', regex=False)
+    v.loc[oz] = v[oz] / 16.
+    lb = oz | unit.str.contains('lb', regex=False) | label.str.contains('lb', regex=False)
+    v.loc[lb] = v[lb] * 0.453592
     return v
 
 
@@ -267,9 +249,7 @@ def clean_weight(df):
 #CC: considering unitname now too
 def clean_height(df):
     v = df.value.astype(float).copy()
-    idx = df.unitname.fillna('').apply(lambda s: s.lower() == 'inch') \
-        | df.valuenum.fillna('').apply(lambda s: 'in' in s.lower()) \
-        | df.mimic_label.apply(lambda s: 'in' in s.lower())
+    idx = (df.unitname.fillna('').str.lower() == 'inch') | df.mimic_label.str.lower().str.contains('in', regex=False)
     v.loc[idx] = np.round(v[idx] * 2.54)
     return v
 

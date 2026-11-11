@@ -10,21 +10,30 @@ from tqdm import tqdm
 from mimic3benchmark.util import dataframe_from_csv
 
 
-def read_patients_table(path):
-    pats = pd.read_csv(path)#dataframe_from_csv(path)  
-    columns = ['subject_id', 'gender', 'anchor_age', 'dod']  
-    pats = pats[columns]
+_STARTED_EVENT_FILES = set()
 
-    # pats = pats[columns]
+
+def _append_observations(fn, header, rows):
+    mode = 'a' if fn in _STARTED_EVENT_FILES else 'w'
+    with open(fn, mode) as f:
+        if mode == 'w':
+            f.write(','.join(header) + '\n')
+            _STARTED_EVENT_FILES.add(fn)
+        csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_MINIMAL).writerows(rows)
+
+
+def read_patients_table(path):
+    pats = pd.read_csv(path) 
+    columns = ['subject_id', 'gender', 'anchor_age', 'anchor_year', 'dod']
+    pats = pats[columns]
     pats.dod = pd.to_datetime(pats.dod)
     return pats
 
 
 def read_admissions_table(path):
 
-    # admits = dataframe_from_csv(path)
     admits = pd.read_csv(path) #header=header, index_col=index_col
-    admits = admits[['subject_id', 'hadm_id', 'admittime', 'dischtime', 'deathtime', 'race']] # missing DIAGNOSIS
+    admits = admits[['subject_id', 'hadm_id', 'admittime', 'dischtime', 'deathtime', 'race', 'hospital_expire_flag']]
     admits.admittime = pd.to_datetime(admits.admittime)
     admits.dischtime = pd.to_datetime(admits.dischtime)
     admits.deathtime = pd.to_datetime(admits.deathtime)
@@ -41,10 +50,9 @@ def read_icustays_table(path):
 
 def read_icd_diagnoses_table(path):
 
-    codes = pd.read_csv(f'{path}/d_icd_diagnoses.csv')
-    # dataframe_from_csv(os.path.join(mimic3_path, 'D_ICD_DIAGNOSES.csv'))
+    codes = pd.read_csv(f'{path}/d_icd_diagnoses.csv', dtype={'icd_code': str})
     codes = codes[['icd_code', 'long_title']]
-    diagnoses = pd.read_csv(f'{path}/diagnoses_icd.csv')
+    diagnoses = pd.read_csv(f'{path}/diagnoses_icd.csv', dtype={'icd_code': str})
     diagnoses = diagnoses.merge(codes, how='inner', left_on='icd_code', right_on='icd_code')
     diagnoses[['subject_id', 'hadm_id', 'seq_num']] = diagnoses[['subject_id', 'hadm_id', 'seq_num']].astype(int)
     return diagnoses
@@ -53,7 +61,6 @@ def read_icd_diagnoses_table(path):
 def read_events_table_by_row(mimic3_path, table):
     nb_rows = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}
     csv_files = {'chartevents': 'icu/chartevents.csv', 'labevents': 'hosp/labevents.csv', 'outputevents': 'icu/outputevents.csv'}
-    # nb_rows = {'chartevents': 330712484, 'labevents': 27854056, 'outputevents': 4349219}
     reader = csv.DictReader(open(os.path.join(mimic3_path, csv_files[table.lower()]), 'r'))
     for i, row in enumerate(reader):
         if 'stay_id' not in row:
@@ -75,9 +82,7 @@ def count_icd_codes(diagnoses, output_path=None):
     # import pdb; pdb.set_trace()
 
 def remove_icustays_with_transfers(stays):
-    # (stays.FIRST_WARDID == stays.LAST_WARDID) & missing from mimic 4
     stays = stays[ (stays.first_careunit == stays.last_careunit)]
-    # DBSOURCE missing 
     return stays[['subject_id', 'hadm_id', 'stay_id', 'last_careunit', 'intime', 'outtime', 'los']]
 
 
@@ -92,17 +97,15 @@ def merge_on_subject_admission(table1, table2):
 
 def add_age_to_icustays(stays):
 
-    stays['age'] = stays.anchor_age 
-    # (stays.intime - stays.DOB).apply(lambda s: s / np.timedelta64(1, 's')) / 60./60/24/365
+    # anchor_age is the age in anchor_year
+    stays['age'] = stays.anchor_age + (stays.intime.dt.year - stays.anchor_year)
     stays.loc[stays.age < 0, 'age'] = 90
     return stays
 
 
 def add_inhospital_mortality_to_icustays(stays):
 
-    mortality = stays.dod.notnull() & ((stays.admittime <= stays.dod) & (stays.dischtime >= stays.dod))
-    mortality = mortality | (stays.deathtime.notnull() & ((stays.admittime <= stays.deathtime) & (stays.dischtime >= stays.deathtime)))
-    stays['mortality'] = mortality.astype(int)
+    stays['mortality'] = stays.hospital_expire_flag.fillna(0).astype(int)
     stays['mortality_inhospital'] = stays['mortality']
     # INHOSPITAL
     return stays
@@ -110,8 +113,7 @@ def add_inhospital_mortality_to_icustays(stays):
 
 def add_inunit_mortality_to_icustays(stays):
 
-    mortality = stays.dod.notnull() & ((stays.intime <= stays.dod) & (stays.outtime >= stays.dod))
-    mortality = mortality | (stays.deathtime.notnull() & ((stays.intime <= stays.deathtime) & (stays.outtime >= stays.deathtime)))
+    mortality = stays.deathtime.notnull() & (stays.intime <= stays.deathtime) & (stays.outtime >= stays.deathtime)
     stays['mortality_inunit'] = mortality.astype(int)
     # mortality_INUNIT
     return stays
@@ -187,15 +189,9 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
         except:
             pass
         fn = os.path.join(dn, 'events.csv')
-        if not os.path.exists(fn) or not os.path.isfile(fn):
-            f = open(fn, 'w')
-            f.write(','.join(obs_header) + '\n')
-            f.close()
-        w = csv.DictWriter(open(fn, 'a'), fieldnames=obs_header, quoting=csv.QUOTE_MINIMAL)
-        w.writerows(data_stats.curr_obs)
+        _append_observations(fn, obs_header, data_stats.curr_obs)
         data_stats.curr_obs = []
 
-    # nb_rows_dict = {'chartevents': 330712484, 'labevents': 27854056, 'outputevents': 4349219}
     nb_rows_dict = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}
     
     nb_rows = nb_rows_dict[table.lower()]
@@ -209,8 +205,6 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
         if (items_to_keep is not None) and (row['itemid'] not in items_to_keep):
             continue
         
-        # import pdb; pdb.set_trace()
-        # value = row['valueuom'] if table=='OUTPUTEVENTS' else row['valuenum']
         row_out = {'subject_id': row['subject_id'],
                    'hadm_id': row['hadm_id'],
                    'stay_id': '' if 'stay_id' not in row else row['stay_id'],
@@ -248,15 +242,9 @@ def read_events_table_and_break_up_by_subject_storetime(mimic3_path, table, outp
         except:
             pass
         fn = os.path.join(dn, 'events_storetime.csv')
-        if not os.path.exists(fn) or not os.path.isfile(fn):
-            f = open(fn, 'w')
-            f.write(','.join(obs_header) + '\n')
-            f.close()
-        w = csv.DictWriter(open(fn, 'a'), fieldnames=obs_header, quoting=csv.QUOTE_MINIMAL)
-        w.writerows(data_stats.curr_obs)
+        _append_observations(fn, obs_header, data_stats.curr_obs)
         data_stats.curr_obs = []
 
-    # nb_rows_dict = {'chartevents': 330712484, 'labevents': 27854056, 'outputevents': 4349219}
     nb_rows_dict = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}
     
     nb_rows = nb_rows_dict[table.lower()]
@@ -271,7 +259,6 @@ def read_events_table_and_break_up_by_subject_storetime(mimic3_path, table, outp
             continue
         
         # import pdb; pdb.set_trace()
-        # value = row['valueuom'] if table=='OUTPUTEVENTS' else row['valuenum']
         row_out = {'subject_id': row['subject_id'],
                    'hadm_id': row['hadm_id'],
                    'stay_id': '' if 'stay_id' not in row else row['stay_id'],

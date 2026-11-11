@@ -6,24 +6,22 @@ import argparse
 import os
 import pandas as pd
 
+from mimic3benchmark.split_assignment import assign, VAL_BUCKETS
+
 def main():
     parser = argparse.ArgumentParser(description="Split train data into train and validation sets.")
     parser.add_argument('dataset_dir', type=str, help='Path to the directory which contains the dataset')
     args, _ = parser.parse_known_args()
-
-    val_patients = set()
-    with open(os.path.join(os.path.dirname(__file__), 'resources/valset_iv.csv'), 'r') as valset_file:
-        for line in valset_file:
-            x, y = line.split(',')
-            if int(y) == 1:
-                val_patients.add(x)
 
     with open(os.path.join(args.dataset_dir, 'train/listfile.csv')) as listfile:
         lines = listfile.readlines()
         header = lines[0]
         lines = lines[1:]
 
-    # import pdb; pdb.set_trace()
+    patients = {x[:x.find("_")] for x in lines}
+    val_patients, n_file, n_hash = assign(patients, 'valset_iv.csv', VAL_BUCKETS)
+    print('patients: {} train, {} val | assigned by valset_iv.csv: {}, by subject_id hash: {}'.format(
+        len(patients) - len(val_patients), len(val_patients), n_file, n_hash))
     train_lines = [x for x in lines if x[:x.find("_")] not in val_patients]
     val_lines = [x for x in lines if x[:x.find("_")] in val_patients]
     assert len(train_lines) + len(val_lines) == len(lines)
