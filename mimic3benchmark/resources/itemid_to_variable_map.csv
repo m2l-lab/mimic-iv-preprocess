@@ -259,7 +259,7 @@ Glucose,Glucose,,ready,,50931,GLUCOSE,,labevents,748981,CHEMISTRY,,BLOOD,7/1/234
 Glucose,Glucose,,verify,,807,Fingerstick Glucose,,chartevents,436622,Chemistry,,,,carevue,,,
 Glucose,Glucose,,verify,,811,Glucose (70-105),,chartevents,381822,Chemistry,,,,carevue,,,
 Glucose,Glucose,,verify,,1529,Glucose,,chartevents,286600,Chemistry,,,,carevue,,,
-Glucose,Glucose,,verify,,50809,GLUCOSE,,labevents,196734,BLOOD GAS,,BLOOD,2339-0,,,,
+Glucose,Glucose,,ready,,50809,GLUCOSE,,labevents,196734,BLOOD GAS,,BLOOD,2339-0,,,,
 Glucose,Glucose,,verify,,51478,GLUCOSE,,labevents,101279,HEMATOLOGY,,URINE,7/1/5792,,,,
 Glucose,Glucose,,verify,,3745,BloodGlucose,,chartevents,2655,Quick Admit,,,,carevue,,,
 Glucose,Glucose (finger stick),,verify,,225664,Glucose finger stick,None,chartevents,247833,Labs,,,,metavision,,Numeric,
